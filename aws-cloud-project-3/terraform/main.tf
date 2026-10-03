@@ -38,6 +38,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 
+//Networking
 resource "aws_vpc" "main" {
   cidr_block = var.vpc_cidr
 
@@ -100,6 +101,7 @@ resource "aws_subnet" "private_subnet_b" {
 }
 
 
+//Public sunets are associated with a route table that has a route through the IG
 //Internet Gateway
 
 resource "aws_internet_gateway" "main" {
@@ -158,6 +160,35 @@ resource "aws_db_subnet_group" "main" {
   }
 }
 
+
+//Security Groups
+
+//Security Group for the Load Balancer
+resource "aws_security_group" "alb_sg" {
+  name        = "project-3-alb-sg"
+  description = "Allows HTTP traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Allow HTTP traffic"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "project-3-alb-sg"
+  }
+}
 
 //Security Group for EC2
 
@@ -251,32 +282,7 @@ resource "aws_db_instance" "project_db" {
 }
 
 
-//Security Group for the Load Balancer
-resource "aws_security_group" "alb_sg" {
-  name        = "project-3-alb-sg"
-  description = "Allows HTTP traffic"
-  vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "Allow HTTP traffic"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    description = "Allow all outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "project-3-alb-sg"
-  }
-}
 
 
 // Application Load Balancer
@@ -319,6 +325,40 @@ resource "aws_lb_target_group" "web_target_group" {
 
   tags = {
     Name = "project-3-web-target-group"
+  }
+}
+
+//Auto Scaling Group for the web servers
+
+resource "aws_autoscaling_group" "web_asg" {
+  name = "project-3-web-asg"
+
+  min_size         = var.asg_min_size
+  desired_capacity = var.asg_desired_capacity
+  max_size         = var.asg_max_size
+
+  vpc_zone_identifier = [
+    aws_subnet.public_subnet_a.id,
+    aws_subnet.public_subnet_b.id
+  ]
+
+//ASG connected to ALB's TG = New instances are pushed to the AL automatically.
+  target_group_arns = [
+    aws_lb_target_group.web_target_group.arn
+  ]
+
+  health_check_type         = "ELB"
+  health_check_grace_period = 180
+
+  launch_template {
+    id      = aws_launch_template.web_launch_template.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "project-3-web-server"
+    propagate_at_launch = true
   }
 }
 
@@ -554,38 +594,6 @@ EOF
   }
 }
 
-//Auto Scaling Group for the web servers
-
-resource "aws_autoscaling_group" "web_asg" {
-  name = "project-3-web-asg"
-
-  min_size         = var.asg_min_size
-  desired_capacity = var.asg_desired_capacity
-  max_size         = var.asg_max_size
-
-  vpc_zone_identifier = [
-    aws_subnet.public_subnet_a.id,
-    aws_subnet.public_subnet_b.id
-  ]
-
-  target_group_arns = [
-    aws_lb_target_group.web_target_group.arn
-  ]
-
-  health_check_type         = "ELB"
-  health_check_grace_period = 180
-
-  launch_template {
-    id      = aws_launch_template.web_launch_template.id
-    version = "$Latest"
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "project-3-web-server"
-    propagate_at_launch = true
-  }
-}
 
 
 //Scaling policy based on average CPU usage
