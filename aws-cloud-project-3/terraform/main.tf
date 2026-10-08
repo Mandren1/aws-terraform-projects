@@ -342,7 +342,7 @@ resource "aws_autoscaling_group" "web_asg" {
     aws_subnet.public_subnet_b.id
   ]
 
-//ASG connected to ALB's TG = New instances are pushed to the AL automatically.
+  //The ASG is connected to ALB's TG = New instances become part of the AL automatically.
   target_group_arns = [
     aws_lb_target_group.web_target_group.arn
   ]
@@ -461,6 +461,7 @@ resource "aws_launch_template" "web_launch_template" {
     name = aws_iam_instance_profile.ec2_profile.name
   }
 
+  //The launch template bootstraps each EC2 instance automatically
   user_data = base64encode(<<-EOF
 #!/bin/bash
 set -euxo pipefail
@@ -500,15 +501,41 @@ def get_db_password():
 DB_PASSWORD = get_db_password()
 
 
-@app.route("/")
-def home():
-    conn = psycopg2.connect(
+def get_db_connection():
+    return psycopg2.connect(
         host="${aws_db_instance.project_db.address}",
         port=5432,
         database="${var.db_name}",
         user="${var.db_username}",
         password=DB_PASSWORD
     )
+
+
+def initialize_database():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS servers (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR(100) NOT NULL
+        );
+    """)
+
+    cursor.execute("""
+        INSERT INTO servers (id, name)
+        VALUES (1, 'Hello from Amazon RDS')
+        ON CONFLICT (id) DO NOTHING;
+    """)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+@app.route("/")
+def home():
+    conn = get_db_connection()
 
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM servers WHERE id = 1;")
@@ -545,10 +572,13 @@ def home():
 """
 
 
+initialize_database()
+
 app.run(
     host="127.0.0.1",
     port=8080
 )
+
 PYTHON
 
 # Create systemd service for Flask

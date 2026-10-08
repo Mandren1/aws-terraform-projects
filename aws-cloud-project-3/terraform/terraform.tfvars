@@ -39,6 +39,7 @@ asg_min_size         = 2
 asg_desired_capacity = 2
 asg_max_size         = 4
 cpu_target_value     = 50
+//Auto scaling group adjusts the number of instances when the load changes
 
 
 //Providing the launch template created variables with values
